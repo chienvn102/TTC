@@ -10,8 +10,7 @@ import NotificationDetailScreen from './src/screens/NotificationDetailScreen';
 import WebViewScreen from './src/screens/WebViewScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { initializeDefaultApps } from './src/storage/appStorage';
-import { startForegroundService, stopForegroundService } from './src/services/foregroundService';
-import { startBackgroundPolling } from './src/services/backgroundFetchService';
+import { startService, isServiceRunning, getServiceStats } from './src/services/robustPollingService';
 import { initializeNotifications, requestPermissions } from './src/services/notificationService';
 import notifee, { EventType } from '@notifee/react-native';
 
@@ -47,18 +46,30 @@ function MainTabs() {
 function App(): React.JSX.Element {
   useEffect(() => {
     const init = async () => {
+      // Initialize app data and notifications
       await initializeDefaultApps();
       await initializeNotifications();
       await requestPermissions();
-      await startForegroundService();
-      await startBackgroundPolling();
+
+      // Start robust polling service
+      await startService();
+
+      console.log('[App] Initialization complete');
     };
     init();
 
-    // Handle app state changes
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+    // Handle app state changes - restart service if needed
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
-        // App came to foreground - service should already be running
+        console.log('[App] App became active, ensuring service is running');
+
+        if (!isServiceRunning()) {
+          console.log('[App] Service not running, restarting...');
+          await startService();
+        } else {
+          const stats = getServiceStats();
+          console.log('[App] Service stats:', stats);
+        }
       }
     });
 
@@ -68,7 +79,6 @@ function App(): React.JSX.Element {
 
       if (type === EventType.ACTION_PRESS) {
         if (pressAction?.id === 'dismiss') {
-          // Cancel the notification
           if (notification?.id) {
             notifee.cancelNotification(notification.id);
           }
@@ -115,3 +125,4 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+
